@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">VoiceLock</string>
+    <string name="accessibility_service_label">VoiceLock app watcher</string>
+    <string name="accessibility_service_description">Lets VoiceLock see which app comes to the foreground so it can show the lock screen. Only the package name of the foreground app is read; screen content is never accessed.</string>
+</resources>

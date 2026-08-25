@@ -1,0 +1,63 @@
+# Versions resolved against the live Maven metadata on 2026-08-26, not from memory.
+#
+# AGP 9.3.2 provides Kotlin via built-in Kotlin, so the org.jetbrains.kotlin.android
+# plugin must NOT be applied -- that is a hard build failure on AGP 9.
+#
+# AGP 9.3.2 pins KGP 2.2.10, but KSP only supports built-in Kotlin from 2.3.1 onward
+# (before that it registers generated sources through the kotlin.sourceSets DSL, which
+# built-in Kotlin rejects) and the KSP 2.3.x line targets Kotlin 2.3+. So KGP is raised
+# past the AGP default via the buildscript classpath in the root build file, and the
+# compose compiler plugin tracks that same Kotlin version.
+#
+# These AndroidX versions are NOT the newest published. compileSdk is pinned to 36 by
+# CLAUDE.md, and the current releases of core-ktx (1.19.0), lifecycle (2.11.0),
+# androidx.hilt (1.4.0) and Compose (BOM 2026.08.00 / compose 1.12.0) all declare
+# minCompileSdk=37, so they cannot be consumed at 36. Each version below is the newest
+# whose AAR metadata still allows compileSdk 36. Moving to compileSdk 37 would free them.
+[versions]
+agp = "9.3.2"
+kotlin = "2.4.10"
+ksp = "2.3.11"
+hilt = "2.60.1"
+room = "2.8.4"
+composeBom = "2026.06.01"
+coreKtx = "1.18.0"
+lifecycle = "2.10.0"
+activityCompose = "1.13.0"
+datastore = "1.2.1"
+androidxHilt = "1.3.0"
+coroutines = "1.11.0"
+junit = "4.13.2"
+
+[libraries]
+androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
+androidx-lifecycle-runtime-ktx = { group = "androidx.lifecycle", name = "lifecycle-runtime-ktx", version.ref = "lifecycle" }
+androidx-lifecycle-viewmodel-compose = { group = "androidx.lifecycle", name = "lifecycle-viewmodel-compose", version.ref = "lifecycle" }
+androidx-lifecycle-runtime-compose = { group = "androidx.lifecycle", name = "lifecycle-runtime-compose", version.ref = "lifecycle" }
+androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }
+
+androidx-compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }
+androidx-compose-ui = { group = "androidx.compose.ui", name = "ui" }
+androidx-compose-ui-graphics = { group = "androidx.compose.ui", name = "ui-graphics" }
+androidx-compose-ui-tooling = { group = "androidx.compose.ui", name = "ui-tooling" }
+androidx-compose-ui-tooling-preview = { group = "androidx.compose.ui", name = "ui-tooling-preview" }
+androidx-compose-material3 = { group = "androidx.compose.material3", name = "material3" }
+
+androidx-datastore-preferences = { group = "androidx.datastore", name = "datastore-preferences", version.ref = "datastore" }
+androidx-room-runtime = { group = "androidx.room", name = "room-runtime", version.ref = "room" }
+androidx-room-ktx = { group = "androidx.room", name = "room-ktx", version.ref = "room" }
+androidx-room-compiler = { group = "androidx.room", name = "room-compiler", version.ref = "room" }
+
+hilt-android = { group = "com.google.dagger", name = "hilt-android", version.ref = "hilt" }
+hilt-compiler = { group = "com.google.dagger", name = "hilt-android-compiler", version.ref = "hilt" }
+androidx-hilt-lifecycle-viewmodel-compose = { group = "androidx.hilt", name = "hilt-lifecycle-viewmodel-compose", version.ref = "androidxHilt" }
+
+kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "coroutines" }
+kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "coroutines" }
+junit = { group = "junit", name = "junit", version.ref = "junit" }
+
+[plugins]
+android-application = { id = "com.android.application", version.ref = "agp" }
+kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
+hilt = { id = "com.google.dagger.hilt.android", version.ref = "hilt" }

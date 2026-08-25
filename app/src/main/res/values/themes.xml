@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.VoiceLock" parent="android:Theme.Material.Light.NoActionBar" />
+
+    <!--
+      Opaque windowBackground so the window paints on the first frame. A translucent
+      or unset background lets the locked app content show through before Compose
+      has drawn anything.
+    -->
+    <style name="Theme.VoiceLock.Lock" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/lock_window_background</item>
+        <item name="android:windowIsTranslucent">false</item>
+        <item name="android:windowShowWallpaper">false</item>
+    </style>
+</resources>
