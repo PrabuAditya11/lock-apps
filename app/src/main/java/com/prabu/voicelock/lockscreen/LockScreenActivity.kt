@@ -12,12 +12,20 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -26,8 +34,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import com.prabu.voicelock.ui.theme.VoiceLockTheme
 import dagger.hilt.android.AndroidEntryPoint
@@ -35,11 +47,11 @@ import kotlinx.coroutines.launch
 
 /**
  * Full-screen Activity rather than a WindowManager overlay: Compose needs a
- * LifecycleOwner and a SavedStateRegistryOwner, which a Service-hosted ComposeView does
- * not have, and back-button and focus handling are standard on an Activity.
+ * LifecycleOwner and a SavedStateRegistryOwner, which a Service-hosted ComposeView
+ * does not have, and back-button and focus handling are standard on an Activity.
  *
- * Declared singleInstance with taskAffinity="" and excludeFromRecents, so it lives in
- * its own task and the user cannot swipe or recents their way back into the locked app.
+ * Declared singleInstance with taskAffinity="" and excludeFromRecents, so it lives
+ * in its own task and the user cannot swipe or recents their way back in.
  */
 @AndroidEntryPoint
 class LockScreenActivity : ComponentActivity() {
@@ -74,7 +86,7 @@ class LockScreenActivity : ComponentActivity() {
         lifecycleScope.launch {
             viewModel.unlocked.collect { unlockedPackage ->
                 if (unlockedPackage == lockedPackage) {
-                    // Finishing here is correct: the grant is already recorded, so
+                    // Finishing is correct here: the grant is already recorded, so
                     // returning to the app will not re-trigger the lock.
                     finish()
                 }
@@ -85,14 +97,14 @@ class LockScreenActivity : ComponentActivity() {
             VoiceLockTheme {
                 LockScreen(
                     lockedPackage = lockedPackage,
-                    onUnlock = { viewModel.unlock(lockedPackage) },
+                    viewModel = viewModel,
                 )
             }
         }
     }
 
     /**
-     * singleInstance means a lock request for a different app is delivered here instead
+     * singleInstance means a lock request for a different app arrives here instead
      * of creating a second instance, so the target has to be re-read.
      */
     override fun onNewIntent(intent: Intent) {
@@ -121,9 +133,9 @@ class LockScreenActivity : ComponentActivity() {
         fun newIntent(context: Context, lockedPackage: String): Intent =
             Intent(context, LockScreenActivity::class.java)
                 .putExtra(EXTRA_LOCKED_PACKAGE, lockedPackage)
-                // NEW_TASK is required to start an Activity from a Service. NO_ANIMATION
-                // removes the window transition, which is faster and avoids animating
-                // over the locked app content.
+                // NEW_TASK is required to start an Activity from a Service.
+                // NO_ANIMATION removes the window transition, which is faster and
+                // avoids animating over the locked app content.
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
     }
 }
@@ -131,9 +143,12 @@ class LockScreenActivity : ComponentActivity() {
 @Composable
 private fun LockScreen(
     lockedPackage: String,
-    onUnlock: () -> Unit,
+    viewModel: LockScreenViewModel,
 ) {
     val context = LocalContext.current
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    var pin by remember { mutableStateOf("") }
+
     val appLabel = remember(lockedPackage) {
         runCatching {
             val packageManager = context.packageManager
@@ -149,7 +164,8 @@ private fun LockScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(32.dp),
+                .verticalScroll(rememberScrollState())
+                .padding(28.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
@@ -158,17 +174,119 @@ private fun LockScreen(
                 style = MaterialTheme.typography.headlineMedium,
                 textAlign = TextAlign.Center,
             )
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(4.dp))
             Text(
                 text = "Locked by VoiceLock",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Spacer(Modifier.height(40.dp))
-            // M1: the voice challenge is not built yet, so this button is the unlock.
-            Button(onClick = onUnlock) {
+
+            Spacer(Modifier.height(28.dp))
+            VoiceSection(state.voice, onRecord = viewModel::captureVoice)
+
+            Spacer(Modifier.height(24.dp))
+            HorizontalDivider()
+            Spacer(Modifier.height(24.dp))
+
+            Text(text = "Enter PIN to unlock", style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.height(12.dp))
+            OutlinedTextField(
+                value = pin,
+                onValueChange = { pin = it.filter(Char::isDigit).take(MAX_PIN_LENGTH) },
+                label = { Text("PIN") },
+                singleLine = true,
+                enabled = state.pinEntryEnabled,
+                visualTransformation = PasswordVisualTransformation(),
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.NumberPassword,
+                    imeAction = ImeAction.Done,
+                ),
+                modifier = Modifier.fillMaxWidth(),
+            )
+            if (state.pinMessage != null) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = state.pinMessage.orEmpty(),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+            Spacer(Modifier.height(12.dp))
+            Button(
+                onClick = {
+                    viewModel.submitPin(lockedPackage, pin)
+                    pin = ""
+                },
+                enabled = state.pinEntryEnabled && pin.isNotEmpty(),
+            ) {
                 Text("Unlock")
             }
         }
     }
 }
+
+@Composable
+private fun VoiceSection(
+    voice: LockScreenViewModel.VoiceState,
+    onRecord: () -> Unit,
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        when (voice) {
+            is LockScreenViewModel.VoiceState.Recording -> {
+                CircularProgressIndicator()
+                Spacer(Modifier.height(8.dp))
+                Text("Listening…", style = MaterialTheme.typography.bodyMedium)
+            }
+
+            is LockScreenViewModel.VoiceState.Computing -> {
+                CircularProgressIndicator()
+                Spacer(Modifier.height(8.dp))
+                Text("Computing embedding…", style = MaterialTheme.typography.bodyMedium)
+            }
+
+            else -> {
+                TextButton(onClick = onRecord) { Text("Speak passphrase (3s)") }
+            }
+        }
+
+        when (voice) {
+            is LockScreenViewModel.VoiceState.Embedded -> {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    // M3 has nothing to compare against, so this is diagnostic output
+                    // rather than a decision. Verification arrives with M4 enrollment.
+                    // Parentheses matter: without them .format() would bind only to
+                    // the second literal and leave the %d placeholders unfilled.
+                    text = (
+                        "%d-dim embedding in %d ms (mic rms %.3f, norm %.1f). " +
+                            "No enrolled voice yet, so this cannot unlock — use the PIN."
+                        ).format(
+                        voice.dimensions,
+                        voice.inferenceMillis,
+                        voice.rms,
+                        voice.norm,
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    textAlign = TextAlign.Center,
+                )
+            }
+
+            is LockScreenViewModel.VoiceState.Failed -> {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = voice.message,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    textAlign = TextAlign.Center,
+                )
+            }
+
+            else -> Unit
+        }
+    }
+}
+
+private const val MAX_PIN_LENGTH = 12
