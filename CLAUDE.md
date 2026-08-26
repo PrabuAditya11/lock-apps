@@ -131,6 +131,53 @@ No `BOOT_COMPLETED` receiver. The system rebinds an enabled `AccessibilityServic
   **Never store recorded audio.** Discard the buffer after computing the embedding.
 - PIN fallback is mandatory from the first audio milestone. Voice will produce false rejections.
 
+### ONNX export traps (learned in M2)
+
+Tooling lives in `tools/onnx/`: `export_ecapa.py` writes the graph, `verify_parity.py`
+is the gate. Requires `onnx`, `onnxruntime`, `onnxscript`. Artifacts land in
+`tools/onnx/build/` (~166 MB with checkpoints) and are gitignored.
+
+Three SpeechBrain modules cannot be traced as-is. All three fail **silently** with
+plausible-looking embeddings, which is why parity is measured, not assumed:
+
+- **`torch.stft`** cannot be exported at all: TorchScript rejects complex types and
+  `torch.export` has no meta kernel for `aten._fft_r2c`. Replaced by `ConvStft`, a
+  real-valued DFT as a strided conv1d (~1e-7 relative). Only Conv/MatMul, so it does
+  not depend on ONNX Runtime shipping an STFT kernel on Android.
+- **Tracing on silence.** An all-zero dummy makes the fbank output constant, so the
+  per-utterance mean folds into the graph and normalization stops depending on the
+  input. Measured 0.03 cosine. Trace with real spectral content.
+- **Frozen frame counts.** `InputNormalization` slices by `round(lengths * x.shape[1])`
+  and the attentive-pooling mask uses `max_len=L`. Both become constants, so the model
+  is right only at the traced duration — 0.88 cosine elsewhere. Replaced by
+  `SentenceMeanNorm` and `FullLengthAttentiveStatisticsPooling`, exact for a single
+  un-padded utterance, which is all the app submits.
+
+**Always verify at several durations.** A frozen shape produces wrong numbers rather
+than an error, so testing only the traced length proves nothing.
+
+Result: cosine 1.00000000 vs the unmodified pipeline across 1.0-7.3 s, relative max
+diff ~2e-6, speaker scores preserved to ~2e-7. Export is 80 MB float32, opset 17 —
+relevant to M6.
+
+---
+
+### Language support — decided 2026-08-26
+
+**Supported languages: Indonesian and English.** Two languages, so the user picks one; a
+picker is warranted rather than an implicit default.
+
+- The choice is made **before** the passphrase is typed and before voice enrollment, so the
+  passphrase is entered and recorded under a known language. It belongs to the enrollment
+  flow (M4), not to M1 settings.
+- This does **not** affect the speaker-verification model. ECAPA-TDNN embeddings model the
+  speaker, not the words, so M2 exports the same model regardless of language.
+- It does affect **M5**: the keyword check must handle both languages, via either one
+  multilingual keyword spotter or one model per language. Two models is the APK-size risk
+  that M6 exists to address — prefer multilingual if accuracy allows.
+- Persist the choice alongside the enrollment embedding. Changing language after enrolling
+  invalidates the passphrase, so treat it as a re-enrollment, not a settings toggle.
+
 ---
 
 ## Roadmap
@@ -139,8 +186,9 @@ No `BOOT_COMPLETED` receiver. The system rebinds an enabled `AccessibilityServic
       No audio, no ML, no model files.
 - [ ] M2 — ONNX export verified: embeddings match the Python original on the same wav.
 - [ ] M3 — `AudioRecord` capture + on-device inference wired to the lock screen.
-- [ ] M4 — enrollment flow, threshold calibration against my own FAR/FRR measurements.
-- [ ] M5 — keyword/passphrase check.
+- [ ] M4 — enrollment flow (language choice -> passphrase entry -> voice enrollment),
+      threshold calibration against my own FAR/FRR measurements.
+- [ ] M5 — keyword/passphrase check, Indonesian and English.
 - [ ] M6 — quantization, only if APK size is an actual problem.
 
 **Do not build ahead of the current milestone.** If a task seems to need a later milestone,

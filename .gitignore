@@ -11,6 +11,10 @@
 local.properties
 
 # Never commit ML models or the enrollment embedding (see CLAUDE.md).
+# Holds the 80 MB export plus the downloaded pretrained checkpoints.
+tools/onnx/build/
+__pycache__/
+*.pyc
 *.onnx
 *.tflite
 /app/src/main/assets/models/
