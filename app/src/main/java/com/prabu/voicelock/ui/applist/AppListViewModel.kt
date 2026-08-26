@@ -24,26 +24,45 @@ class AppListViewModel @Inject constructor(
 
     data class UiState(
         val loading: Boolean = true,
+        /** Apps matching [query]; not the full installed list. */
         val apps: List<InstalledApp> = emptyList(),
         val lockedPackages: Set<String> = emptySet(),
         val lockingEnabled: Boolean = true,
         val gracePeriodSeconds: Int = SettingsStore.DEFAULT_GRACE_SECONDS,
+        val query: String = "",
+        /** Number of launchable apps before filtering, for the empty-result message. */
+        val totalAppCount: Int = 0,
     )
 
     private val installedApps = MutableStateFlow<List<InstalledApp>?>(null)
+    private val searchQuery = MutableStateFlow("")
 
     val uiState: StateFlow<UiState> = combine(
         installedApps,
         lockedAppsRepository.lockedPackages,
         settingsStore.lockingEnabled,
         settingsStore.gracePeriodSeconds,
-    ) { apps, locked, enabled, grace ->
+        searchQuery,
+    ) { apps, locked, enabled, grace, query ->
+        val allApps = apps.orEmpty()
+        val needle = query.trim()
+        val matches = if (needle.isEmpty()) {
+            allApps
+        } else {
+            // Package name is searchable too: several Samsung apps share a label.
+            allApps.filter {
+                it.label.contains(needle, ignoreCase = true) ||
+                    it.packageName.contains(needle, ignoreCase = true)
+            }
+        }
         UiState(
             loading = apps == null,
-            apps = apps.orEmpty(),
+            apps = matches,
             lockedPackages = locked,
             lockingEnabled = enabled,
             gracePeriodSeconds = grace,
+            query = query,
+            totalAppCount = allApps.size,
         )
     }.stateIn(
         scope = viewModelScope,
@@ -55,6 +74,10 @@ class AppListViewModel @Inject constructor(
         viewModelScope.launch {
             installedApps.value = installedAppsProvider.loadLaunchableApps()
         }
+    }
+
+    fun setSearchQuery(query: String) {
+        searchQuery.value = query
     }
 
     fun setLocked(packageName: String, locked: Boolean) {

@@ -11,6 +11,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -68,6 +69,21 @@ fun AppListScreen(
             }
         }
 
+        OutlinedTextField(
+            value = state.query,
+            onValueChange = viewModel::setSearchQuery,
+            label = { Text("Search apps") },
+            singleLine = true,
+            trailingIcon = {
+                if (state.query.isNotEmpty()) {
+                    TextButton(onClick = { viewModel.setSearchQuery("") }) { Text("Clear") }
+                }
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+        )
+
         HorizontalDivider()
 
         if (state.loading) {
@@ -77,6 +93,19 @@ fun AppListScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 CircularProgressIndicator()
+            }
+        } else if (state.apps.isEmpty()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(24.dp),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text(
+                    text = "No apps match \"" + state.query.trim() + "\"",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
             }
         } else {
             LazyColumn(Modifier.fillMaxSize()) {
