@@ -133,6 +133,9 @@ class FullLengthAttentiveStatisticsPooling(nn.Module):
     all ones, so deriving it from the tensor keeps the axis dynamic and the
     arithmetic identical. masked_fill is dropped as a no-op under an all-ones
     mask.
+
+    lengths is accepted only to match the call site in ECAPA_TDNN.forward and is
+    deliberately ignored, since the app never submits padded batches.
     """
 
     def __init__(self, pooling: nn.Module) -> None:
@@ -197,7 +200,11 @@ class EcapaEmbedder(nn.Module):
         else:
             feats = self.mean_var_norm(feats)
             embedding = self.embedding_model(feats)
-        return embedding.squeeze(1)  # [1, 192]
+        # Indexing rather than squeeze(1): TorchScript lowers squeeze(dim) into an
+        # ONNX If that guards against the dim not being 1, which leaves dynamic
+        # control flow at the output and makes the output shape symbolic instead
+        # of [1, 192]. Indexing is unconditional.
+        return embedding[:, 0, :]  # [1, 192]
 
 
 def tracing_input(seconds: float) -> torch.Tensor:
