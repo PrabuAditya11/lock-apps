@@ -129,6 +129,15 @@ No `BOOT_COMPLETED` receiver. The system rebinds an enabled `AccessibilityServic
 - **Inference never on the main thread.** `Dispatchers.Default`, single-threaded session.
 - Enrollment embedding stored via `EncryptedSharedPreferences` / Android Keystore.
   **Never store recorded audio.** Discard the buffer after computing the embedding.
+- **Minimum audio length is 0.05 s (800 samples).** Below that the exported graph throws
+  from a reflect-pad inside the ECAPA conv blocks; it does not return a bad embedding.
+  Check the captured length before calling inference. A spoken passphrase is far longer,
+  so treat ~0.5 s as the practical floor and reject anything shorter as "too short".
+- The exported graph takes **batch 1 only** and rejects anything else, so no silent
+  garbage there. Inference is deterministic: identical input gives bitwise identical output.
+- Verification latency is **not** on the ~100 ms lock-screen path. The lock screen is
+  already up by the time the user speaks, so a few hundred ms of inference is fine.
+  (3 s clip measured at 59 ms on desktop CPU; the phone will be several times slower.)
 - PIN fallback is mandatory from the first audio milestone. Voice will produce false rejections.
 
 ### ONNX export traps (learned in M2)
@@ -152,6 +161,10 @@ plausible-looking embeddings, which is why parity is measured, not assumed:
   is right only at the traced duration — 0.88 cosine elsewhere. Replaced by
   `SentenceMeanNorm` and `FullLengthAttentiveStatisticsPooling`, exact for a single
   un-padded utterance, which is all the app submits.
+
+- **`squeeze(dim)`** lowers to an ONNX `If` guarding against the dim not being 1, which
+  leaves dynamic control flow at the output and makes the output shape symbolic. Index
+  (`x[:, 0, :]`) instead. Fewer exotic ops is less risk on whatever ORT build ships.
 
 **Always verify at several durations.** A frozen shape produces wrong numbers rather
 than an error, so testing only the traced length proves nothing.
