@@ -22,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.prabu.voicelock.BuildConfig
 import com.prabu.voicelock.util.InstalledApp
 
 @Composable
@@ -30,6 +31,7 @@ fun AppListScreen(
     viewModel: AppListViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val selfTest by viewModel.selfTestResult.collectAsStateWithLifecycle()
 
     Column(modifier = modifier.fillMaxSize()) {
         Row(
@@ -83,6 +85,25 @@ fun AppListScreen(
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 8.dp),
         )
+
+        if (BuildConfig.DEBUG) {
+            // Runs the model on a fixed waveform so the numbers can be compared with
+            // tools/onnx/reference_vector.py. Proves the Android ONNX Runtime build
+            // agrees with the desktop one, not merely that it does not crash.
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = selfTest ?: "Model self-test not run",
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(onClick = viewModel::runSelfTest) { Text("Self-test") }
+            }
+        }
 
         HorizontalDivider()
 

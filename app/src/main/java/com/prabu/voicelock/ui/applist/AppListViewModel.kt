@@ -2,12 +2,14 @@ package com.prabu.voicelock.ui.applist
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.prabu.voicelock.audio.ModelSelfTest
 import com.prabu.voicelock.data.LockedAppsRepository
 import com.prabu.voicelock.data.prefs.SettingsStore
 import com.prabu.voicelock.util.InstalledApp
 import com.prabu.voicelock.util.InstalledAppsProvider
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -20,6 +22,7 @@ class AppListViewModel @Inject constructor(
     private val installedAppsProvider: InstalledAppsProvider,
     private val lockedAppsRepository: LockedAppsRepository,
     private val settingsStore: SettingsStore,
+    private val modelSelfTest: ModelSelfTest,
 ) : ViewModel() {
 
     data class UiState(
@@ -73,6 +76,21 @@ class AppListViewModel @Inject constructor(
     init {
         viewModelScope.launch {
             installedApps.value = installedAppsProvider.loadLaunchableApps()
+        }
+    }
+
+    private val _selfTestResult = MutableStateFlow<String?>(null)
+
+    /** Debug-only: output of running the model on a fixed waveform. */
+    val selfTestResult: StateFlow<String?> = _selfTestResult.asStateFlow()
+
+    fun runSelfTest() {
+        viewModelScope.launch {
+            _selfTestResult.value = "running…"
+            _selfTestResult.value = modelSelfTest.run().fold(
+                onSuccess = { it.summary() },
+                onFailure = { "failed: ${it.message}" },
+            )
         }
     }
 
