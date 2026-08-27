@@ -28,6 +28,7 @@ import com.prabu.voicelock.util.InstalledApp
 @Composable
 fun AppListScreen(
     modifier: Modifier = Modifier,
+    onReEnroll: () -> Unit = {},
     viewModel: AppListViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -51,6 +52,20 @@ fun AppListScreen(
                 checked = state.lockingEnabled,
                 onCheckedChange = viewModel::setLockingEnabled,
             )
+        }
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = "Voiceprint",
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.weight(1f),
+            )
+            TextButton(onClick = onReEnroll) { Text("Re-enroll") }
         }
 
         Row(

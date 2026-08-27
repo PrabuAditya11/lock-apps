@@ -14,6 +14,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
@@ -23,6 +24,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.prabu.voicelock.ui.applist.AppListScreen
+import com.prabu.voicelock.ui.enrollment.EnrollmentScreen
 import com.prabu.voicelock.ui.onboarding.OnboardingScreen
 import com.prabu.voicelock.ui.onboarding.OnboardingViewModel
 import com.prabu.voicelock.ui.onboarding.canDrawOverlays
@@ -54,6 +56,8 @@ private fun VoiceLockRoot(viewModel: OnboardingViewModel = hiltViewModel()) {
     val overlayGranted = remember { mutableStateOf(canDrawOverlays(context)) }
     val microphoneGranted = remember { mutableStateOf(hasMicrophonePermission(context)) }
     val pinSet by viewModel.isPinSet.collectAsStateWithLifecycle()
+    val enrolled by viewModel.isEnrolled.collectAsStateWithLifecycle()
+    var reEnrolling by remember { mutableStateOf(false) }
 
     val requestMicrophone = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
@@ -73,13 +77,20 @@ private fun VoiceLockRoot(viewModel: OnboardingViewModel = hiltViewModel()) {
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    val setupComplete = accessibilityEnabled.value &&
+    val permissionsAndPinDone = accessibilityEnabled.value &&
         overlayGranted.value &&
         microphoneGranted.value &&
         pinSet
 
-    if (setupComplete) {
-        AppListScreen()
+    if (permissionsAndPinDone && (enrolled || reEnrolling)) {
+        if (reEnrolling) {
+            EnrollmentScreen(onFinished = { reEnrolling = false })
+        } else {
+            AppListScreen(onReEnroll = { reEnrolling = true })
+        }
+    } else if (permissionsAndPinDone) {
+        // Permissions and PIN are done but there is no voiceprint yet.
+        EnrollmentScreen()
     } else {
         OnboardingScreen(
             accessibilityEnabled = accessibilityEnabled.value,

@@ -2,6 +2,7 @@ package com.prabu.voicelock.ui.onboarding
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.prabu.voicelock.data.prefs.EnrollmentStore
 import com.prabu.voicelock.data.prefs.PinStore
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -15,12 +16,19 @@ import javax.inject.Inject
 @HiltViewModel
 class OnboardingViewModel @Inject constructor(
     private val pinStore: PinStore,
+    enrollmentStore: EnrollmentStore,
 ) : ViewModel() {
 
     val isPinSet: StateFlow<Boolean> = pinStore.isPinSet.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),
         // Assume unset until the store answers; the gate re-evaluates on emission.
+        initialValue = false,
+    )
+
+    val isEnrolled: StateFlow<Boolean> = enrollmentStore.isEnrolled.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5_000),
         initialValue = false,
     )
 
