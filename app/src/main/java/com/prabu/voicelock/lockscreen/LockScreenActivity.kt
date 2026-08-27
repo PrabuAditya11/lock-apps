@@ -41,6 +41,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
+import com.prabu.voicelock.BuildConfig
+import com.prabu.voicelock.domain.VoiceMatch
 import com.prabu.voicelock.ui.theme.VoiceLockTheme
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
@@ -181,8 +183,20 @@ private fun LockScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
 
-            Spacer(Modifier.height(28.dp))
-            VoiceSection(state.voice, onRecord = viewModel::captureVoice)
+            if (state.passphraseHint != null) {
+                Spacer(Modifier.height(16.dp))
+                Text(
+                    text = "Say: \"${state.passphraseHint}\"",
+                    style = MaterialTheme.typography.titleSmall,
+                    textAlign = TextAlign.Center,
+                )
+            }
+
+            Spacer(Modifier.height(24.dp))
+            VoiceSection(
+                voice = state.voice,
+                onRecord = { viewModel.captureVoice(lockedPackage) },
+            )
 
             Spacer(Modifier.height(24.dp))
             HorizontalDivider()
@@ -244,47 +258,51 @@ private fun VoiceSection(
             is LockScreenViewModel.VoiceState.Computing -> {
                 CircularProgressIndicator()
                 Spacer(Modifier.height(8.dp))
-                Text("Computing embedding…", style = MaterialTheme.typography.bodyMedium)
+                Text("Verifying…", style = MaterialTheme.typography.bodyMedium)
             }
 
-            else -> {
-                TextButton(onClick = onRecord) { Text("Speak passphrase (3s)") }
-            }
+            else -> Button(onClick = onRecord) { Text("Speak passphrase (3s)") }
         }
 
-        when (voice) {
-            is LockScreenViewModel.VoiceState.Embedded -> {
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    // M3 has nothing to compare against, so this is diagnostic output
-                    // rather than a decision. Verification arrives with M4 enrollment.
-                    // Parentheses matter: without them .format() would bind only to
-                    // the second literal and leave the %d placeholders unfilled.
-                    text = (
-                        "%d-dim embedding in %d ms (mic rms %.3f, norm %.1f). " +
-                            "No enrolled voice yet, so this cannot unlock — use the PIN."
-                        ).format(
-                        voice.dimensions,
+        val detail: Pair<String, Boolean>? = when (voice) {
+            is LockScreenViewModel.VoiceState.Accepted ->
+                // The score is shown only in debug builds: it is exactly the feedback
+                // an impostor would use to tune an attack, but it is also what makes
+                // threshold calibration possible.
+                (if (BuildConfig.DEBUG) {
+                    "Recognized (%.3f, %d ms)".format(voice.similarity, voice.inferenceMillis)
+                } else {
+                    "Recognized"
+                }) to false
+
+            is LockScreenViewModel.VoiceState.Rejected ->
+                (if (BuildConfig.DEBUG) {
+                    "Not recognized (%.3f, threshold %.2f, %d ms)".format(
+                        voice.similarity,
+                        VoiceMatch.PROVISIONAL_THRESHOLD,
                         voice.inferenceMillis,
-                        voice.rms,
-                        voice.norm,
-                    ),
-                    style = MaterialTheme.typography.bodySmall,
-                    textAlign = TextAlign.Center,
-                )
-            }
+                    )
+                } else {
+                    "Not recognized. Try again or use the PIN."
+                }) to true
 
-            is LockScreenViewModel.VoiceState.Failed -> {
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    text = voice.message,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
-                    textAlign = TextAlign.Center,
-                )
-            }
+            is LockScreenViewModel.VoiceState.Failed -> voice.message to true
 
-            else -> Unit
+            else -> null
+        }
+
+        if (detail != null) {
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = detail.first,
+                style = MaterialTheme.typography.bodySmall,
+                color = if (detail.second) {
+                    MaterialTheme.colorScheme.error
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+                textAlign = TextAlign.Center,
+            )
         }
     }
 }

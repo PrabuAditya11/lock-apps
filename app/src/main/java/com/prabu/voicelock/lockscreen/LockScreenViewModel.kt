@@ -4,9 +4,11 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.prabu.voicelock.audio.AudioCapture
 import com.prabu.voicelock.audio.SpeakerEmbedder
+import com.prabu.voicelock.data.prefs.EnrollmentStore
 import com.prabu.voicelock.data.prefs.PinStore
 import com.prabu.voicelock.data.prefs.SettingsStore
 import com.prabu.voicelock.domain.UnlockSessionManager
+import com.prabu.voicelock.domain.VoiceMatch
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -22,32 +24,27 @@ import javax.inject.Inject
 class LockScreenViewModel @Inject constructor(
     private val audioCapture: AudioCapture,
     private val speakerEmbedder: SpeakerEmbedder,
+    private val enrollmentStore: EnrollmentStore,
     private val pinStore: PinStore,
     private val unlockSessionManager: UnlockSessionManager,
     private val settingsStore: SettingsStore,
 ) : ViewModel() {
 
-    /**
-     * M3 computes an embedding but cannot decide anything with it: there is no
-     * enrolled reference to compare against until M4, so [Embedded] is a
-     * diagnostic and the PIN is the only way through.
-     */
     sealed interface VoiceState {
         data object Idle : VoiceState
         data object Recording : VoiceState
         data object Computing : VoiceState
-        data class Embedded(
-            val dimensions: Int,
-            val inferenceMillis: Long,
-            val rms: Float,
-            val norm: Float,
-        ) : VoiceState
 
+        /** Above threshold; the grant has already been recorded. */
+        data class Accepted(val similarity: Float, val inferenceMillis: Long) : VoiceState
+
+        data class Rejected(val similarity: Float, val inferenceMillis: Long) : VoiceState
         data class Failed(val message: String) : VoiceState
     }
 
     data class UiState(
         val voice: VoiceState = VoiceState.Idle,
+        val passphraseHint: String? = null,
         val pinMessage: String? = null,
         val pinEntryEnabled: Boolean = true,
     )
@@ -60,19 +57,34 @@ class LockScreenViewModel @Inject constructor(
     /** Emits the package name once a grant has been recorded for it. */
     val unlocked: SharedFlow<String> = _unlocked
 
-    fun captureVoice() {
-        if (_uiState.value.voice is VoiceState.Recording) return
+    init {
+        // The passphrase is shown as a reminder. It is not a secret from whoever is
+        // holding the phone; the voice is the factor being checked.
         viewModelScope.launch {
-            _uiState.update { it.copy(voice = VoiceState.Recording) }
+            val enrollment = enrollmentStore.load()
+            _uiState.update { it.copy(passphraseHint = enrollment?.passphrase) }
+        }
+    }
 
+    fun captureVoice(packageName: String) {
+        val current = _uiState.value.voice
+        if (current is VoiceState.Recording || current is VoiceState.Computing) return
+
+        viewModelScope.launch {
+            val enrollment = enrollmentStore.load()
+            if (enrollment == null) {
+                fail("No voiceprint enrolled. Open VoiceLock to enroll.")
+                return@launch
+            }
+
+            _uiState.update { it.copy(voice = VoiceState.Recording) }
             when (val captured = audioCapture.record()) {
                 is AudioCapture.Result.PermissionDenied ->
                     fail("Microphone permission is not granted")
 
                 is AudioCapture.Result.TooShort ->
-                    fail("Only %.2fs captured; need at least %.1fs".format(
-                        captured.seconds, AudioCapture.MIN_SECONDS,
-                    ))
+                    fail("Only %.2fs captured; need at least %.1fs"
+                        .format(captured.seconds, AudioCapture.MIN_SECONDS))
 
                 is AudioCapture.Result.Failed -> fail(captured.reason)
 
@@ -81,19 +93,29 @@ class LockScreenViewModel @Inject constructor(
                     when (val embedded = speakerEmbedder.embed(captured.samples)) {
                         is SpeakerEmbedder.Result.Failed -> fail(embedded.reason)
                         is SpeakerEmbedder.Result.Embedded -> {
-                            var sumOfSquares = 0.0
-                            for (value in embedded.embedding) {
-                                sumOfSquares += (value * value).toDouble()
-                            }
-                            _uiState.update {
-                                it.copy(
-                                    voice = VoiceState.Embedded(
-                                        dimensions = embedded.embedding.size,
-                                        inferenceMillis = embedded.inferenceMillis,
-                                        rms = captured.rms,
-                                        norm = Math.sqrt(sumOfSquares).toFloat(),
-                                    ),
-                                )
+                            val similarity = VoiceMatch.cosineSimilarity(
+                                embedded.embedding,
+                                enrollment.centroid,
+                            )
+                            if (VoiceMatch.isMatch(similarity)) {
+                                grantAndAnnounce(packageName)
+                                _uiState.update {
+                                    it.copy(
+                                        voice = VoiceState.Accepted(
+                                            similarity,
+                                            embedded.inferenceMillis,
+                                        ),
+                                    )
+                                }
+                            } else {
+                                _uiState.update {
+                                    it.copy(
+                                        voice = VoiceState.Rejected(
+                                            similarity,
+                                            embedded.inferenceMillis,
+                                        ),
+                                    )
+                                }
                             }
                         }
                     }
