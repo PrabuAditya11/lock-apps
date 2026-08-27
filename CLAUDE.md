@@ -127,7 +127,11 @@ No `BOOT_COMPLETED` receiver. The system rebinds an enabled `AccessibilityServic
 - Mel-filterbank features must match SpeechBrain's `Fbank` config exactly. Prefer tracing the
   frontend into the ONNX graph over reimplementing it in Kotlin.
 - **Inference never on the main thread.** `Dispatchers.Default`, single-threaded session.
-- Enrollment embedding stored via `EncryptedSharedPreferences` / Android Keystore.
+- Enrollment embedding stored encrypted with an **AES-GCM key generated in the Android
+  Keystore**, blob in DataStore (`data/prefs/EnrollmentStore.kt`). *Not*
+  `EncryptedSharedPreferences`: that API is deprecated for main-thread stalls and OEM
+  keyset corruption. The fallback PIN uses the same idea — PBKDF2 hash peppered with a
+  Keystore HMAC key, so a copied data file cannot be brute-forced off the device.
   **Never store recorded audio.** Discard the buffer after computing the embedding.
 - **Minimum audio length is 0.05 s (800 samples).** Below that the exported graph throws
   from a reflect-pad inside the ECAPA conv blocks; it does not return a bad embedding.
@@ -139,6 +143,14 @@ No `BOOT_COMPLETED` receiver. The system rebinds an enabled `AccessibilityServic
   already up by the time the user speaks, so a few hundred ms of inference is fine.
   (3 s clip measured at 59 ms on desktop CPU; the phone will be several times slower.)
 - PIN fallback is mandatory from the first audio milestone. Voice will produce false rejections.
+- **The verification threshold is not calibrated.** `VoiceMatch.PROVISIONAL_THRESHOLD`
+  is a guess so the flow is testable end to end; it is not a security property until it
+  is set from measured FAR/FRR. That needs recordings of me (false rejections) and of
+  other people saying the same passphrase (false acceptances), across quiet/noisy and
+  near/far. Collecting the impostor set is the slow part.
+- Enrollment averages several utterances into an L2-normalized centroid rather than
+  trusting one recording, and reports the minimum pairwise similarity between samples so
+  an inconsistent set is visible instead of silently producing a bad voiceprint.
 
 ### ONNX export traps (learned in M2)
 
